@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Gradient-Based Optimization — Rajneesh Babu</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+  <style>
+    :root{
+      --bg:#0a0e1a; --bg2:#111827; --bg3:#1f2937;
+      --border:#3d2a00; --border2:#f59e0b33;
+      --amber:#f59e0b; --amber2:#fbbf24; --amber3:#d97706;
+      --orange:#f97316; --purple:#8b5cf6; --green:#10b981;
+      --text:#f1f5f9; --text2:#94a3b8; --text3:#64748b;
+      --shadow:0 4px 24px rgba(245,158,11,0.14);
+    }
+    *,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+    html{scroll-behavior:smooth;}
+    body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;line-height:1.7;overflow-x:hidden;}
+    ::-webkit-scrollbar{width:4px;}
+    ::-webkit-scrollbar-thumb{background:var(--amber);border-radius:2px;}
+
+    /* HERO */
+    .hero{
+      min-height:100vh; display:flex; align-items:center;
+      background:radial-gradient(ellipse at 20% 50%,rgba(217,119,6,0.15) 0%,transparent 60%),
+                 radial-gradient(ellipse at 80% 20%,rgba(139,92,246,0.1) 0%,transparent 50%),
+                 var(--bg);
+      padding:4rem 0; position:relative; overflow:hidden;
+    }
+    .hero::before{
+      content:''; position:absolute; inset:0;
+      background:url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23f59e0b' fill-opacity='0.04'%3E%3Ccircle cx='30' cy='30' r='1'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+      pointer-events:none;
+    }
+    .container{max-width:900px;margin:0 auto;padding:0 1.5rem;position:relative;z-index:1;}
+
+    .badge{
+      display:inline-flex;align-items:center;gap:.5rem;
+      background:rgba(217,119,6,0.12);border:1px solid rgba(245,158,11,0.3);
+      color:var(--amber2);font-size:.72rem;font-weight:700;letter-spacing:1.5px;
+      text-transform:uppercase;padding:.3rem 1rem;border-radius:99px;margin-bottom:1.5rem;
+    }
+    .badge-dot{width:6px;height:6px;background:var(--orange);border-radius:50%;animation:pulse 2s infinite;}
+    @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.3;}}
+
+    h1{font-size:clamp(2rem,5vw,3.5rem);font-weight:900;letter-spacing:-1.5px;line-height:1.1;margin-bottom:1rem;}
+    .h1-grad{background:linear-gradient(135deg,#fbbf24,#f97316,#8b5cf6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+    .hero-sub{font-size:1rem;color:var(--text2);margin-bottom:2rem;max-width:620px;line-height:1.8;}
+    .hero-sub span{color:var(--amber2);font-weight:600;}
+
+    .hero-meta{display:flex;flex-wrap:wrap;gap:.6rem;margin-bottom:2.5rem;}
+    .meta-chip{display:inline-flex;align-items:center;gap:.4rem;padding:.28rem .8rem;border-radius:6px;font-size:.75rem;font-weight:600;border:1px solid;}
+    .mc-amber{background:rgba(245,158,11,0.1);border-color:rgba(245,158,11,0.3);color:var(--amber2);}
+    .mc-purple{background:rgba(139,92,246,0.1);border-color:rgba(139,92,246,0.3);color:#a78bfa;}
+    .mc-orange{background:rgba(249,115,22,0.1);border-color:rgba(249,115,22,0.3);color:#fb923c;}
+    .mc-green{background:rgba(16,185,129,0.1);border-color:rgba(16,185,129,0.3);color:#34d399;}
+
+    .hero-links{display:flex;gap:.75rem;flex-wrap:wrap;}
+    .btn{padding:.6rem 1.4rem;border-radius:8px;font-weight:600;font-size:.875rem;text-decoration:none;display:inline-flex;align-items:center;gap:.5rem;transition:all .2s;}
+    .btn-primary{background:linear-gradient(135deg,var(--amber3),var(--orange));color:#fff;box-shadow:0 4px 15px rgba(217,119,6,0.35);}
+    .btn-primary:hover{transform:translateY(-2px);box-shadow:0 8px 25px rgba(217,119,6,0.45);}
+    .btn-ghost{background:transparent;color:var(--text2);border:1px solid var(--border);}
+    .btn-ghost:hover{border-color:var(--amber);color:var(--amber2);transform:translateY(-2px);}
+
+    /* SECTIONS */
+    section{padding:5rem 0;}
+    .sec-label{font-size:.7rem;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--amber2);margin-bottom:.5rem;}
+    h2{font-size:clamp(1.5rem,3vw,2rem);font-weight:800;letter-spacing:-.5px;margin-bottom:.5rem;}
+    .sec-divider{height:2px;width:48px;background:linear-gradient(90deg,var(--amber),transparent);margin-bottom:2.5rem;border-radius:2px;}
+
+    /* ALGORITHM GRID */
+    .algo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:1rem;}
+    .algo-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:1.3rem;transition:all .25s;}
+    .algo-card:hover{border-color:var(--amber);transform:translateY(-3px);box-shadow:var(--shadow);}
+    .algo-icon{font-size:1.5rem;margin-bottom:.7rem;}
+    .algo-type{font-size:.68rem;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--amber2);margin-bottom:.3rem;}
+    .algo-title{font-size:.92rem;font-weight:700;color:var(--text);margin-bottom:.4rem;}
+    .algo-desc{font-size:.8rem;color:var(--text2);line-height:1.7;}
+
+    /* COMPARISON TABLE */
+    .table-wrap{overflow-x:auto;border-radius:12px;border:1px solid var(--border);}
+    table{width:100%;border-collapse:collapse;font-size:.82rem;}
+    thead{background:var(--bg3);}
+    th{padding:.85rem 1rem;text-align:left;font-weight:700;color:var(--amber2);font-size:.72rem;letter-spacing:1px;text-transform:uppercase;border-bottom:1px solid var(--border);}
+    td{padding:.75rem 1rem;border-bottom:1px solid rgba(255,255,255,0.04);color:var(--text2);}
+    tr:last-child td{border-bottom:none;}
+    tr:hover td{background:rgba(245,158,11,0.04);}
+    td.bold{color:var(--text);font-weight:600;}
+    .tag{display:inline-block;padding:.15rem .55rem;border-radius:4px;font-size:.68rem;font-weight:700;}
+    .tag-green{background:rgba(16,185,129,0.15);color:#34d399;}
+    .tag-amber{background:rgba(245,158,11,0.15);color:#fbbf24;}
+    .tag-red{background:rgba(239,68,68,0.15);color:#f87171;}
+    .tag-blue{background:rgba(59,130,246,0.15);color:#93c5fd;}
+
+    /* FINDINGS */
+    .findings-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:1.2rem;}
+    @media(max-width:600px){.findings-grid{grid-template-columns:1fr;}}
+    .finding-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:1.4rem;border-left:3px solid;transition:all .25s;}
+    .finding-card:hover{transform:translateY(-2px);box-shadow:var(--shadow);}
+    .fc-amber{border-left-color:var(--amber);}
+    .fc-orange{border-left-color:var(--orange);}
+    .fc-purple{border-left-color:var(--purple);}
+    .fc-green{border-left-color:var(--green);}
+    .fc-label{font-size:.68rem;font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:.5rem;}
+    .finding-title{font-size:.92rem;font-weight:700;color:var(--text);margin-bottom:.4rem;}
+    .finding-desc{font-size:.82rem;color:var(--text2);line-height:1.7;}
+
+    /* QUESTIONS */
+    .q-list{display:flex;flex-direction:column;gap:.75rem;}
+    .q-item{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:1rem 1.2rem;display:flex;gap:.75rem;align-items:flex-start;transition:border-color .2s;}
+    .q-item:hover{border-color:var(--amber);}
+    .q-num{font-family:'JetBrains Mono',monospace;font-size:.75rem;font-weight:700;color:var(--amber);padding-top:.1rem;min-width:1.5rem;}
+    .q-text{font-size:.88rem;color:var(--text2);line-height:1.7;}
+
+    /* TECH STACK */
+    .tech-pills{display:flex;flex-wrap:wrap;gap:.6rem;}
+    .pill{padding:.35rem .9rem;border-radius:6px;font-size:.78rem;font-weight:600;background:var(--bg2);border:1px solid var(--border);color:var(--text2);transition:all .2s;}
+    .pill:hover{border-color:var(--amber);color:var(--amber2);}
+    .pill-hl{border-color:rgba(245,158,11,0.3);color:var(--amber2);}
+
+    /* STRUCTURE */
+    .code-block{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:1.5rem;font-family:'JetBrains Mono',monospace;font-size:.78rem;color:var(--text2);line-height:1.9;overflow-x:auto;}
+    .code-block .d{color:var(--amber2);}
+    .code-block .f{color:var(--text3);}
+    .code-block .c{color:#34d399;}
+
+    /* FOOTER */
+    footer{border-top:1px solid var(--border);padding:2rem 0;text-align:center;color:var(--text3);font-size:.8rem;}
+    footer a{color:var(--amber2);text-decoration:none;}
+    footer a:hover{text-decoration:underline;}
+
+    /* SECTION BG ALT */
+    .sec-alt{background:rgba(245,158,11,0.02);}
+
+    /* SCROLL REVEAL */
+    .reveal{opacity:0;transform:translateY(24px);transition:opacity .6s ease,transform .6s ease;}
+    .revealed{opacity:1;transform:none;}
+  </style>
+</head>
+<body>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="container">
+    <div class="badge"><span class="badge-dot"></span>Course Project · DS 285</div>
+    <h1><span class="h1-grad">Gradient-Based Optimization</span><br/>Convergence Analysis in ML</h1>
+    <p class="hero-sub">
+      A deep dive into seven numerical optimization algorithms — from vanilla
+      <span>Gradient Descent</span> to <span>Adam</span> — analysing convergence
+      rates, stability, and generalisation on convex and non-convex loss landscapes.
+    </p>
+    <div class="hero-meta">
+      <span class="meta-chip mc-amber">📐 7 Optimizers</span>
+      <span class="meta-chip mc-orange">📉 Convergence Analysis</span>
+      <span class="meta-chip mc-purple">🧠 ML Theory</span>
+      <span class="meta-chip mc-green">IISc · DS 285 · 2024–25</span>
+    </div>
+    <div class="hero-links">
+      <a href="https://github.com/rajneeshbabu/gradient-optimization" class="btn btn-primary" target="_blank">
+        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2A10 10 0 0 0 2 12c0 4.42 2.87 8.17 6.84 9.5.5.08.66-.23.66-.5v-1.69c-2.77.6-3.36-1.34-3.36-1.34-.46-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.87 1.52 2.34 1.07 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.92 0-1.11.38-2 1.03-2.71-.1-.25-.45-1.29.1-2.64 0 0 .84-.27 2.75 1.02.79-.22 1.65-.33 2.5-.33.85 0 1.71.11 2.5.33 1.91-1.29 2.75-1.02 2.75-1.02.55 1.35.2 2.39.1 2.64.65.71 1.03 1.6 1.03 2.71 0 3.82-2.34 4.66-4.57 4.91.36.31.69.92.69 1.85V21c0 .27.16.59.67.5C19.14 20.16 22 16.42 22 12A10 10 0 0 0 12 2z"/></svg>
+        View on GitHub
+      </a>
+      <a href="https://rajneeshbabu.github.io" class="btn btn-ghost" target="_blank">← Portfolio</a>
+    </div>
+  </div>
+</section>
+
+<!-- OVERVIEW -->
+<section class="reveal">
+  <div class="container">
+    <p class="sec-label">Overview</p>
+    <h2>Seven Optimizers, One Framework</h2>
+    <div class="sec-divider"></div>
+    <p style="color:var(--text2);max-width:700px;margin-bottom:2.5rem;font-size:.95rem;">
+      This project connects classical numerical analysis theory to modern deep learning practice by benchmarking gradient-based optimizers across a range of loss landscapes — from smooth strongly-convex quadratics to ill-conditioned Rosenbrock functions and neural network training tasks.
+    </p>
+    <div class="algo-grid">
+      <div class="algo-card">
+        <div class="algo-icon">📉</div>
+        <div class="algo-type">First-order · Baseline</div>
+        <div class="algo-title">Gradient Descent (GD)</div>
+        <div class="algo-desc">Fixed step size; O(1/k) convergence on smooth convex functions. Sensitive to learning rate choice and conditioning.</div>
+      </div>
+      <div class="algo-card">
+        <div class="algo-icon">🎲</div>
+        <div class="algo-type">First-order · Stochastic</div>
+        <div class="algo-title">Stochastic GD (SGD)</div>
+        <div class="algo-desc">Mini-batch gradient estimates enable online learning and implicit regularization. Noisy updates aid escaping local minima.</div>
+      </div>
+      <div class="algo-card">
+        <div class="algo-icon">🚀</div>
+        <div class="algo-type">First-order · Memory</div>
+        <div class="algo-title">Momentum (Heavy Ball)</div>
+        <div class="algo-desc">Exponential moving average of gradients dampens oscillations in narrow valleys, speeding convergence on ill-conditioned problems.</div>
+      </div>
+      <div class="algo-card">
+        <div class="algo-icon">⚡</div>
+        <div class="algo-type">Accelerated · Lookahead</div>
+        <div class="algo-title">Nesterov AGD</div>
+        <div class="algo-desc">Evaluates gradient at a lookahead point. Achieves optimal O(1/k²) rate on strongly convex functions — confirmed theoretically and empirically.</div>
+      </div>
+      <div class="algo-card">
+        <div class="algo-icon">🎯</div>
+        <div class="algo-type">Adaptive · Per-parameter</div>
+        <div class="algo-title">AdaGrad</div>
+        <div class="algo-desc">Accumulates squared gradients to adapt learning rates per parameter. Excels on sparse features; suffers from monotone lr decay on dense problems.</div>
+      </div>
+      <div class="algo-card">
+        <div class="algo-icon">🔄</div>
+        <div class="algo-type">Adaptive · EMA</div>
+        <div class="algo-title">RMSProp</div>
+        <div class="algo-desc">Replaces AdaGrad's cumulative sum with exponential moving average, preventing lr from vanishing. Well-suited for non-stationary objectives.</div>
+      </div>
+      <div class="algo-card">
+        <div class="algo-icon">👑</div>
+        <div class="algo-type">Adaptive + Momentum</div>
+        <div class="algo-title">Adam</div>
+        <div class="algo-desc">Combines RMSProp and momentum with bias correction. Fast convergence in practice; may generalise worse than SGD on smooth convex problems.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CONVERGENCE TABLE -->
+<section class="sec-alt reveal">
+  <div class="container">
+    <p class="sec-label">Convergence Rates</p>
+    <h2>Theoretical Guarantees</h2>
+    <div class="sec-divider"></div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Optimizer</th>
+            <th>Convergence Rate</th>
+            <th>Adaptive LR</th>
+            <th>Best For</th>
+            <th>Limitation</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="bold">Gradient Descent</td>
+            <td><span class="tag tag-amber">O(1/k)</span></td>
+            <td><span class="tag tag-red">No</span></td>
+            <td>Smooth convex, baseline</td>
+            <td>Slow on ill-conditioned</td>
+          </tr>
+          <tr>
+            <td class="bold">SGD</td>
+            <td><span class="tag tag-amber">O(1/√k)</span></td>
+            <td><span class="tag tag-red">No</span></td>
+            <td>Large-scale, deep learning</td>
+            <td>High variance, tuning-heavy</td>
+          </tr>
+          <tr>
+            <td class="bold">Momentum</td>
+            <td><span class="tag tag-amber">O(1/k)</span> improved</td>
+            <td><span class="tag tag-red">No</span></td>
+            <td>Ill-conditioned problems</td>
+            <td>Overshoot in sharp minima</td>
+          </tr>
+          <tr>
+            <td class="bold">Nesterov AGD</td>
+            <td><span class="tag tag-green">O(1/k²)</span></td>
+            <td><span class="tag tag-red">No</span></td>
+            <td>Strongly convex, optimal</td>
+            <td>Sensitive to lr tuning</td>
+          </tr>
+          <tr>
+            <td class="bold">AdaGrad</td>
+            <td><span class="tag tag-amber">O(log k/√k)</span></td>
+            <td><span class="tag tag-green">Yes</span></td>
+            <td>Sparse gradients / NLP</td>
+            <td>lr → 0 on dense problems</td>
+          </tr>
+          <tr>
+            <td class="bold">RMSProp</td>
+            <td><span class="tag tag-amber">O(1/√k)</span></td>
+            <td><span class="tag tag-green">Yes</span></td>
+            <td>RNNs, non-stationary</td>
+            <td>No bias correction</td>
+          </tr>
+          <tr>
+            <td class="bold">Adam</td>
+            <td><span class="tag tag-amber">O(1/√k)</span></td>
+            <td><span class="tag tag-green">Yes</span></td>
+            <td>General deep learning</td>
+            <td>May not generalise as SGD</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- KEY QUESTIONS -->
+<section class="reveal">
+  <div class="container">
+    <p class="sec-label">Research Questions</p>
+    <h2>What We Investigated</h2>
+    <div class="sec-divider"></div>
+    <div class="q-list">
+      <div class="q-item">
+        <div class="q-num">01</div>
+        <div class="q-text">How do step size (learning rate) and curvature of the loss landscape affect convergence rate and stability?</div>
+      </div>
+      <div class="q-item">
+        <div class="q-num">02</div>
+        <div class="q-text">When does an adaptive learning rate help versus hurt generalisation on smooth convex and non-convex problems?</div>
+      </div>
+      <div class="q-item">
+        <div class="q-num">03</div>
+        <div class="q-text">What is the relationship between Lipschitz smoothness, strong convexity, and convergence guarantees?</div>
+      </div>
+      <div class="q-item">
+        <div class="q-num">04</div>
+        <div class="q-text">How do momentum-based methods compare to classical accelerated gradient methods (Nesterov) in practice?</div>
+      </div>
+      <div class="q-item">
+        <div class="q-num">05</div>
+        <div class="q-text">Do learning rate schedules (cosine decay, step decay, warmup) consistently improve over fixed learning rates across all optimizers?</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FINDINGS -->
+<section class="sec-alt reveal">
+  <div class="container">
+    <p class="sec-label">Key Findings</p>
+    <h2>Empirical Results</h2>
+    <div class="sec-divider"></div>
+    <div class="findings-grid">
+      <div class="finding-card fc-amber">
+        <div class="fc-label" style="color:var(--amber2);">Momentum</div>
+        <div class="finding-title">2–4× Faster than Vanilla GD</div>
+        <div class="finding-desc">SGD + Momentum converges 2–4× faster than vanilla GD on ill-conditioned problems, consistently across tested loss landscapes.</div>
+      </div>
+      <div class="finding-card fc-orange">
+        <div class="fc-label" style="color:#fb923c;">Adam vs SGD</div>
+        <div class="finding-title">Speed vs. Generalisation Trade-off</div>
+        <div class="finding-desc">Adam reaches lower training loss faster but can generalise worse than SGD on smooth convex problems — consistent with the "sharp minima" hypothesis.</div>
+      </div>
+      <div class="finding-card fc-purple">
+        <div class="fc-label" style="color:#a78bfa;">Nesterov AGD</div>
+        <div class="finding-title">Optimal O(1/k²) Rate Confirmed</div>
+        <div class="finding-desc">Nesterov AGD achieves the theoretically optimal O(1/k²) convergence rate on strongly convex functions, matching theory with empirical evidence.</div>
+      </div>
+      <div class="finding-card fc-green">
+        <div class="fc-label" style="color:#34d399;">AdaGrad</div>
+        <div class="finding-title">Sparse vs Dense Gradient Tradeoff</div>
+        <div class="finding-desc">AdaGrad excels on sparse gradient landscapes but suffers from monotone learning rate decay on dense problems, causing stagnation.</div>
+      </div>
+      <div class="finding-card fc-amber">
+        <div class="fc-label" style="color:var(--amber2);">LR Schedules</div>
+        <div class="finding-title">Cosine Decay Consistently Wins</div>
+        <div class="finding-desc">Learning rate schedules (cosine, step decay) consistently outperform fixed learning rates across all seven methods tested.</div>
+      </div>
+      <div class="finding-card fc-orange">
+        <div class="fc-label" style="color:#fb923c;">Condition Number</div>
+        <div class="finding-title">Key Predictor of Optimizer Choice</div>
+        <div class="finding-desc">The condition number of the Hessian strongly predicts when adaptive methods outperform fixed-rate methods on a given problem.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- TECH STACK -->
+<section class="reveal">
+  <div class="container">
+    <p class="sec-label">Tech Stack</p>
+    <h2>Tools &amp; Libraries</h2>
+    <div class="sec-divider"></div>
+    <div class="tech-pills">
+      <span class="pill pill-hl">Python 3.10+</span>
+      <span class="pill pill-hl">NumPy</span>
+      <span class="pill pill-hl">PyTorch</span>
+      <span class="pill">Matplotlib</span>
+      <span class="pill">Plotly</span>
+      <span class="pill">Jupyter Notebook</span>
+      <span class="pill">scikit-learn</span>
+    </div>
+  </div>
+</section>
+
+<!-- PROJECT STRUCTURE -->
+<section class="sec-alt reveal">
+  <div class="container">
+    <p class="sec-label">Project Structure</p>
+    <h2>Repository Layout</h2>
+    <div class="sec-divider"></div>
+    <div class="code-block">
+<span class="d">gradient-optimization/</span>
+├── <span class="d">notebooks/</span>
+│   ├── <span class="c">01_convex_analysis.ipynb</span>       <span class="f"># Convex loss landscapes &amp; theory</span>
+│   ├── <span class="c">02_optimizer_comparison.ipynb</span>  <span class="f"># GD vs SGD vs Adam vs Nesterov</span>
+│   ├── <span class="c">03_lr_schedules.ipynb</span>          <span class="f"># Learning rate scheduling experiments</span>
+│   └── <span class="c">04_dl_benchmarks.ipynb</span>         <span class="f"># Neural network training benchmarks</span>
+├── <span class="d">src/</span>
+│   ├── <span class="c">optimizers.py</span>     <span class="f"># NumPy implementations of all 7 optimizers</span>
+│   └── <span class="c">landscapes.py</span>     <span class="f"># Rosenbrock, quadratic, ill-conditioned funcs</span>
+├── <span class="d">results/</span>
+│   └── <span class="d">figures/</span>          <span class="f"># Convergence curve plots</span>
+├── <span class="d">report/</span>
+│   └── <span class="c">gradient_optimization_report.pdf</span>
+├── <span class="c">requirements.txt</span>
+└── <span class="c">README.md</span>
+    </div>
+  </div>
+</section>
+
+<!-- COURSE INFO -->
+<section class="reveal">
+  <div class="container">
+    <p class="sec-label">Course</p>
+    <h2>Academic Context</h2>
+    <div class="sec-divider"></div>
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:1.8rem;max-width:500px;border-left:3px solid var(--amber);">
+      <p style="font-size:.75rem;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--amber2);margin-bottom:.6rem;">DS 285</p>
+      <p style="font-size:1rem;font-weight:700;color:var(--text);margin-bottom:.3rem;">Numerical Methods for Data Science</p>
+      <p style="font-size:.85rem;color:var(--text2);">M.Tech Computational and Data Sciences</p>
+      <p style="font-size:.85rem;color:var(--text3);">Indian Institute of Science · Bengaluru · 2024–25</p>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="container">
+    <p>
+      <a href="https://rajneeshbabu.github.io">Rajneesh Babu</a> ·
+      M.Tech CDS · IISc Bengaluru · 2025
+    </p>
+  </div>
+</footer>
+
+<script>
+  const observer = new IntersectionObserver(
+    entries => entries.forEach(e => { if(e.isIntersecting) e.target.classList.add('revealed'); }),
+    { threshold: 0.1 }
+  );
+  document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+</script>
+</body>
+</html>
