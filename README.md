@@ -6,7 +6,8 @@
 [![PyTorch](https://img.shields.io/badge/PyTorch-EE4C2C?style=for-the-badge&logo=pytorch)](https://pytorch.org)
 
 **Author:** Rajneesh Babu  
-**Project Page:** [rajneeshbabu.github.io/gradient-optimization](https://rajneeshbabu.github.io/gradient-optimization/)
+**Project Page:** [rajneeshbabu.github.io/gradient-optimization](https://rajneeshbabu.github.io/gradient-optimization/)  
+**Report:** [gradient_optimization_report.pdf](report/gradient_optimization_report.pdf)
 
 ---
 
@@ -14,60 +15,61 @@
 
 I built this project to deeply understand what gradient-based optimizers are actually doing — not just using `torch.optim.Adam` as a black box, but implementing every update rule from scratch in NumPy and watching how each one behaves on different loss landscapes.
 
-The project covers 7 optimizers, 3 loss landscapes, and 3 learning rate schedules. Every optimizer is benchmarked on the same starting point and plotted on the same axes so comparisons are fair.
+7 optimizers, 3 loss landscapes, 3 LR schedules, and a PyTorch DL benchmark — all on the same starting point so comparisons are fair.
 
 ---
 
-## Optimizers Implemented
+## Results
 
-| Optimizer | Key Idea |
-|-----------|----------|
-| Gradient Descent | Baseline — pure gradient step |
-| SGD (mini-batch) | Noisy gradient, faster in practice |
-| Momentum | Velocity accumulation — dampens oscillations |
-| Nesterov AGD | Look-ahead before gradient step — O(1/k²) rate |
-| AdaGrad | Per-parameter adaptive lr — good for sparse gradients |
-| RMSProp | Fixes AdaGrad's vanishing lr using EMA |
-| Adam | Momentum + RMSProp + bias correction |
+### Convergence on ill-conditioned quadratic (κ = 100)
 
----
+![Ill-conditioned comparison](results/figures/compare_ill_conditioned.png)
 
-## Loss Landscapes
+Adam and Nesterov converge in ~50–80 iterations. Vanilla GD needs 300+ and still hasn't reached the same loss.
 
-- **Well-conditioned quadratic** (κ ≈ 2) — all optimizers converge fast, baseline comparison
-- **Ill-conditioned quadratic** (κ = 1000) — exposes GD's zigzagging, shows where momentum and Adam win
-- **Rosenbrock** — non-convex banana-shaped valley, tests ability to follow a curved narrow path
-- **Logistic regression** — real ML loss, supports mini-batch SGD
+### GD convergence vs condition number
+
+![GD vs kappa](results/figures/gd_vs_kappa.png)
+
+Empirical curves (solid) closely match the theoretical bound `((κ-1)/(κ+1))^k` (dashed). At κ=500, GD fails to converge in 1000 iterations.
+
+### Learning rate schedules
+
+![LR schedule loss](results/figures/lr_schedule_loss.png)
+
+Fixed LR reaches the lowest final loss (~0.155). Cosine and warmup+cosine reach ~0.20. The 1/√k schedule decays too aggressively and stalls at ~0.38.
+
+### Deep learning benchmark — MLP on make_moons
+
+![DL accuracy](results/figures/dl_accuracy_bar.png)
+
+SGD, Momentum, and Nesterov all hit **98.5%** test accuracy. Adam/RMSProp/AdaGrad reach **97.5%** — consistent with the known Adam generalization gap on small datasets.
 
 ---
 
 ## Key Findings
 
-- On **ill-conditioned problems**, Nesterov and Adam converge in ~50 iterations vs ~500 for GD
-- **Adam** reaches a good solution fastest but can overshoot on simple convex problems
-- **AdaGrad** works well early but stalls on dense gradients as its lr decays to near zero
-- **Cosine annealing** consistently outperforms fixed lr and step decay across all methods
-- **Momentum β=0.9** cuts iteration count by ~3× on quadratics with κ=1000
+- **Condition number dominates GD convergence** — empirically matches `((κ-1)/(κ+1))^k` theory exactly
+- **Momentum gives ~5× speedup** on ill-conditioned problems (κ=100, β=0.9)
+- **Nesterov outperforms plain momentum** — O(1/k²) rate confirmed empirically
+- **AdaGrad stalls** on dense gradients as its lr decays to near zero
+- **RMSProp fixes AdaGrad** via EMA denominator — stable throughout
+- **SGD + Momentum beats Adam** on DL accuracy (98.5% vs 97.5% on make_moons)
+- **Adam is most robust overall** — least sensitive to lr, works on every landscape
 
 ---
 
-## Project Structure
+## Optimizers Implemented
 
-```
-gradient-optimization/
-├── src/
-│   ├── optimizers.py     # All 7 optimizers + 3 LR schedules (NumPy)
-│   └── landscapes.py     # Quadratic, Rosenbrock, Logistic loss functions
-├── notebooks/
-│   ├── 01_convex_analysis.ipynb       # Convergence on quadratic landscapes
-│   ├── 02_optimizer_comparison.ipynb  # Head-to-head comparison of all 7
-│   ├── 03_lr_schedules.ipynb          # Fixed vs cosine vs step decay
-│   └── 04_dl_benchmarks.ipynb         # PyTorch MLP training comparison
-├── results/
-│   └── figures/          # Saved convergence plots
-├── requirements.txt
-└── README.md
-```
+| Optimizer | Key Idea | Convergence |
+|-----------|----------|-------------|
+| Gradient Descent | Pure gradient step | O(1/k) |
+| SGD (mini-batch) | Noisy gradient + LR schedule | O(1/k) |
+| Momentum | Velocity accumulation | ~3–5× faster |
+| Nesterov AGD | Look-ahead gradient | O(1/k²) ✓ |
+| AdaGrad | Cumulative squared grad scaling | Good early, stalls |
+| RMSProp | EMA squared grad scaling | Stable throughout |
+| Adam | Momentum + RMSProp + bias correction | Fastest on ill-cond. |
 
 ---
 
@@ -77,48 +79,44 @@ gradient-optimization/
 git clone https://github.com/rajneeshbabu/gradient-optimization.git
 cd gradient-optimization
 pip install -r requirements.txt
-
-# Run all notebooks in sequence
 jupyter notebook notebooks/
 ```
 
-Start with `01_convex_analysis.ipynb` — it builds intuition before the harder comparisons.
+Start with `01_convex_analysis.ipynb`, then run them in order.
 
----
-
-## Quick Code Example
+### Quick test
 
 ```python
+import numpy as np
 from src.landscapes import make_ill_conditioned_quadratic
 from src.optimizers import run_all
-import numpy as np
-import matplotlib.pyplot as plt
 
 landscape = make_ill_conditioned_quadratic(n=10, kappa=1000)
-x0 = np.zeros(10)
-
-results = run_all(landscape, x0, n_iter=300)
+results = run_all(landscape, x0=np.zeros(10), n_iter=300)
 
 for name, r in results.items():
-    plt.semilogy(r.f_history, label=name)
-
-plt.xlabel("Iteration")
-plt.ylabel("Loss (log scale)")
-plt.title("Convergence on Ill-Conditioned Quadratic (κ=1000)")
-plt.legend()
-plt.show()
+    print(f"{name:15s}  loss={r.f_history[-1]:.2e}  iters={r.n_iters}")
 ```
 
 ---
 
-## Dependencies
+## Project Structure
 
-| Package | Version | Use |
-|---------|---------|-----|
-| numpy | ≥ 1.23 | All optimizer implementations |
-| matplotlib | ≥ 3.6 | Convergence plots |
-| torch | ≥ 2.0 | DL benchmark notebook |
-| jupyter | ≥ 1.0 | Notebooks |
+```
+gradient-optimization/
+├── src/
+│   ├── optimizers.py     # 7 optimizers + 3 LR schedules (NumPy)
+│   └── landscapes.py     # Quadratic, Rosenbrock, Logistic landscapes
+├── notebooks/
+│   ├── 01_convex_analysis.ipynb
+│   ├── 02_optimizer_comparison.ipynb
+│   ├── 03_lr_schedules.ipynb
+│   └── 04_dl_benchmarks.ipynb
+├── results/figures/      # All output plots
+├── report/
+│   └── gradient_optimization_report.pdf
+└── requirements.txt
+```
 
 ---
 

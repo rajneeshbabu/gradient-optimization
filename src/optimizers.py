@@ -430,3 +430,6 @@ def run_all(landscape, x0, n_iter=500,
         "RMSProp":  rmsprop(landscape,          x0, lr=rms_lr,  n_iter=n_iter),
         "Adam":     adam(landscape,             x0, lr=adam_lr, n_iter=n_iter),
     }
+
+# alias kept for notebook compatibility
+run_all_optimizers = run_all
