@@ -1,57 +1,53 @@
-# Gradient-Based Optimization: Convergence Analysis of Numerical Methods in ML
+# Gradient-Based Optimization: Convergence Analysis
 
 [![GitHub Pages](https://img.shields.io/badge/🌐_Project_Page-GitHub_Pages-6366f1?style=for-the-badge)](https://rajneeshbabu.github.io/gradient-optimization/)
-[![IISc](https://img.shields.io/badge/IISc-CDS_Course_Project-003580?style=for-the-badge)](https://cds.iisc.ac.in)
 [![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python)](https://python.org)
+[![NumPy](https://img.shields.io/badge/NumPy-013243?style=for-the-badge&logo=numpy)](https://numpy.org)
+[![PyTorch](https://img.shields.io/badge/PyTorch-EE4C2C?style=for-the-badge&logo=pytorch)](https://pytorch.org)
+
+**Author:** Rajneesh Babu  
+**Project Page:** [rajneeshbabu.github.io/gradient-optimization](https://rajneeshbabu.github.io/gradient-optimization/)
 
 ---
 
-## Overview
+## What this is
 
-A course project for **M.Tech Computational and Data Sciences, IISc Bengaluru** analysing the convergence behaviour, stability, and practical performance of gradient-based numerical optimisation algorithms used in machine learning — connecting classical numerical analysis theory to modern deep learning practice.
+I built this project to deeply understand what gradient-based optimizers are actually doing — not just using `torch.optim.Adam` as a black box, but implementing every update rule from scratch in NumPy and watching how each one behaves on different loss landscapes.
 
----
-
-## Algorithms Studied
-
-| Optimiser | Type | Key Property |
-|-----------|------|--------------|
-| Gradient Descent (GD) | First-order | Baseline; fixed step size |
-| Stochastic GD (SGD) | First-order | Noisy gradients; online learning |
-| Momentum (Heavy Ball) | First-order + memory | Dampens oscillations |
-| Nesterov Accelerated GD | First-order + lookahead | O(1/k²) convergence |
-| AdaGrad | Adaptive | Per-parameter learning rate |
-| RMSProp | Adaptive | Exponential moving average |
-| Adam | Adaptive + momentum | Combines best of both |
+The project covers 7 optimizers, 3 loss landscapes, and 3 learning rate schedules. Every optimizer is benchmarked on the same starting point and plotted on the same axes so comparisons are fair.
 
 ---
 
-## Key Questions Explored
+## Optimizers Implemented
 
-- How do step size (learning rate) and curvature of the loss landscape affect convergence rate?
-- When does adaptive learning rate help vs. hurt generalisation?
-- What is the relationship between Lipschitz smoothness, strong convexity, and convergence guarantees?
-- How do momentum-based methods compare to classical accelerated gradient methods?
+| Optimizer | Key Idea |
+|-----------|----------|
+| Gradient Descent | Baseline — pure gradient step |
+| SGD (mini-batch) | Noisy gradient, faster in practice |
+| Momentum | Velocity accumulation — dampens oscillations |
+| Nesterov AGD | Look-ahead before gradient step — O(1/k²) rate |
+| AdaGrad | Per-parameter adaptive lr — good for sparse gradients |
+| RMSProp | Fixes AdaGrad's vanishing lr using EMA |
+| Adam | Momentum + RMSProp + bias correction |
+
+---
+
+## Loss Landscapes
+
+- **Well-conditioned quadratic** (κ ≈ 2) — all optimizers converge fast, baseline comparison
+- **Ill-conditioned quadratic** (κ = 1000) — exposes GD's zigzagging, shows where momentum and Adam win
+- **Rosenbrock** — non-convex banana-shaped valley, tests ability to follow a curved narrow path
+- **Logistic regression** — real ML loss, supports mini-batch SGD
 
 ---
 
 ## Key Findings
 
-- **SGD + Momentum** converges 2–4× faster than vanilla GD on ill-conditioned problems
-- **Adam** reaches lower loss faster but can generalise worse than SGD on smooth convex problems
-- **Nesterov AGD** achieves optimal O(1/k²) rate on strongly convex functions, confirming theory
-- **AdaGrad** excels on sparse gradient landscapes but suffers from learning rate decay on dense problems
-- **Learning rate schedules** (cosine, step decay) consistently outperform fixed rates across all methods
-
----
-
-## Tech Stack
-
-- Python 3.10+
-- NumPy (custom optimiser implementations)
-- PyTorch (deep learning benchmarks)
-- Matplotlib / Plotly (convergence curve visualisations)
-- Jupyter Notebook
+- On **ill-conditioned problems**, Nesterov and Adam converge in ~50 iterations vs ~500 for GD
+- **Adam** reaches a good solution fastest but can overshoot on simple convex problems
+- **AdaGrad** works well early but stalls on dense gradients as its lr decays to near zero
+- **Cosine annealing** consistently outperforms fixed lr and step decay across all methods
+- **Momentum β=0.9** cuts iteration count by ~3× on quadratics with κ=1000
 
 ---
 
@@ -59,40 +55,71 @@ A course project for **M.Tech Computational and Data Sciences, IISc Bengaluru** 
 
 ```
 gradient-optimization/
-├── notebooks/
-│   ├── 01_convex_analysis.ipynb       # Convex loss landscapes
-│   ├── 02_optimizer_comparison.ipynb  # GD vs SGD vs Adam etc.
-│   ├── 03_lr_schedules.ipynb          # Learning rate scheduling
-│   └── 04_dl_benchmarks.ipynb         # Neural network training experiments
 ├── src/
-│   ├── optimizers.py     # Numpy implementations of all optimisers
-│   └── landscapes.py     # Rosenbrock, quadratic, ill-conditioned functions
+│   ├── optimizers.py     # All 7 optimizers + 3 LR schedules (NumPy)
+│   └── landscapes.py     # Quadratic, Rosenbrock, Logistic loss functions
+├── notebooks/
+│   ├── 01_convex_analysis.ipynb       # Convergence on quadratic landscapes
+│   ├── 02_optimizer_comparison.ipynb  # Head-to-head comparison of all 7
+│   ├── 03_lr_schedules.ipynb          # Fixed vs cosine vs step decay
+│   └── 04_dl_benchmarks.ipynb         # PyTorch MLP training comparison
 ├── results/
-│   └── figures/
-├── report/
-│   └── gradient_optimization_report.pdf
+│   └── figures/          # Saved convergence plots
 ├── requirements.txt
 └── README.md
 ```
 
 ---
 
-## Run Locally
+## Run It
 
 ```bash
 git clone https://github.com/rajneeshbabu/gradient-optimization.git
 cd gradient-optimization
 pip install -r requirements.txt
+
+# Run all notebooks in sequence
 jupyter notebook notebooks/
+```
+
+Start with `01_convex_analysis.ipynb` — it builds intuition before the harder comparisons.
+
+---
+
+## Quick Code Example
+
+```python
+from src.landscapes import make_ill_conditioned_quadratic
+from src.optimizers import run_all
+import numpy as np
+import matplotlib.pyplot as plt
+
+landscape = make_ill_conditioned_quadratic(n=10, kappa=1000)
+x0 = np.zeros(10)
+
+results = run_all(landscape, x0, n_iter=300)
+
+for name, r in results.items():
+    plt.semilogy(r.f_history, label=name)
+
+plt.xlabel("Iteration")
+plt.ylabel("Loss (log scale)")
+plt.title("Convergence on Ill-Conditioned Quadratic (κ=1000)")
+plt.legend()
+plt.show()
 ```
 
 ---
 
-## Course
+## Dependencies
 
-**DS 285 — Numerical Methods for Data Science**
-M.Tech Computational and Data Sciences · IISc Bengaluru · 2024–25
+| Package | Version | Use |
+|---------|---------|-----|
+| numpy | ≥ 1.23 | All optimizer implementations |
+| matplotlib | ≥ 3.6 | Convergence plots |
+| torch | ≥ 2.0 | DL benchmark notebook |
+| jupyter | ≥ 1.0 | Notebooks |
 
 ---
 
-*© 2025 Rajneesh Babu · IISc Bengaluru*
+*© 2025 Rajneesh Babu*

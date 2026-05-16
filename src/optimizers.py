@@ -1,305 +1,399 @@
 """
 optimizers.py
--------------
-NumPy implementations of 7 gradient-based optimization algorithms.
 
-Optimizers:
-  1. Gradient Descent (GD)
-  2. Stochastic Gradient Descent (SGD)
-  3. Momentum (Heavy Ball)
-  4. Nesterov Accelerated Gradient Descent (NAG)
-  5. AdaGrad
-  6. RMSProp
-  7. Adam
+Implementations of 7 gradient-based optimizers from scratch using NumPy.
+I wrote these to understand what's actually happening under the hood --
+no PyTorch autograd, just the raw update rules.
 
-Each optimizer returns a history of (x, f(x)) pairs for convergence analysis.
+Optimizers covered:
+    - Gradient Descent
+    - SGD (with mini-batch + LR schedule support)
+    - Momentum (Heavy Ball)
+    - Nesterov Accelerated GD
+    - AdaGrad
+    - RMSProp
+    - Adam
+
+Each function returns an OptimResult object that stores the full trajectory,
+so you can plot convergence curves and compare them easily.
 """
 
 import numpy as np
 
 
-# ─── BASE CLASS ───────────────────────────────────────────────────────────────
+# --------------------------------------------------------------------------- #
+#  Result container                                                             #
+# --------------------------------------------------------------------------- #
 
 class OptimResult:
-    """Container for optimization run history."""
+    """Stores the trajectory of an optimization run."""
 
     def __init__(self, name):
         self.name = name
-        self.x_history = []    # parameter values
-        self.f_history = []    # function values
-        self.g_norm_history = []  # gradient norms
+        self.x_history = []        # parameter at each step
+        self.f_history = []        # loss at each step
+        self.g_norm_history = []   # gradient norm (useful for diagnosing convergence)
 
-    def record(self, x, f, g_norm):
+    def record(self, x, f_val, g_norm):
         self.x_history.append(x.copy())
-        self.f_history.append(float(f))
+        self.f_history.append(float(f_val))
         self.g_norm_history.append(float(g_norm))
 
     @property
     def n_iters(self):
         return len(self.f_history)
 
+    def __repr__(self):
+        return (f"OptimResult(name='{self.name}', "
+                f"iters={self.n_iters}, "
+                f"final_loss={self.f_history[-1]:.6f})")
 
-# ─── 1. GRADIENT DESCENT ──────────────────────────────────────────────────────
+
+# --------------------------------------------------------------------------- #
+#  1. Gradient Descent                                                          #
+# --------------------------------------------------------------------------- #
 
 def gradient_descent(landscape, x0, lr=0.01, n_iter=500, tol=1e-8):
     """
-    Vanilla Gradient Descent.
+    Plain gradient descent -- the simplest possible optimizer.
 
-    x_{k+1} = x_k - lr * grad f(x_k)
+    At each step we move in the direction opposite to the gradient:
+        x = x - lr * grad(f(x))
 
-    Parameters
-    ----------
-    landscape : object with .f(x) and .grad(x) methods
-    x0        : initial point (array)
-    lr        : learning rate (step size)
-    n_iter    : max iterations
-    tol       : gradient norm tolerance for early stopping
+    Works well when the loss is convex and well-conditioned, but can be
+    painfully slow on ill-conditioned problems (elongated valleys).
 
-    Returns
-    -------
-    result : OptimResult
+    Args:
+        landscape : any object with .f(x) and .grad(x) methods
+        x0        : starting point
+        lr        : step size (learning rate)
+        n_iter    : maximum number of steps
+        tol       : stop early if gradient norm drops below this
+
+    Returns:
+        OptimResult with full trajectory
     """
     result = OptimResult("Gradient Descent")
-    x = np.array(x0, dtype=np.float64)
+    x = np.array(x0, dtype=float)
 
     for _ in range(n_iter):
         g = landscape.grad(x)
         g_norm = np.linalg.norm(g)
         result.record(x, landscape.f(x), g_norm)
+
+        # stop if we are close enough to a critical point
         if g_norm < tol:
             break
+
         x = x - lr * g
 
     return result
 
 
-# ─── 2. SGD ───────────────────────────────────────────────────────────────────
+# --------------------------------------------------------------------------- #
+#  2. SGD with optional LR schedule                                             #
+# --------------------------------------------------------------------------- #
 
 def sgd(landscape, x0, lr=0.01, n_iter=500, batch_size=32,
         lr_schedule=None, tol=1e-8, seed=42):
     """
-    Stochastic Gradient Descent with optional learning rate schedule.
+    Stochastic Gradient Descent.
 
-    Parameters
-    ----------
-    landscape   : object with .stochastic_grad(x, batch_size, rng) method
-    lr_schedule : callable(step) -> lr, or None for constant lr
-    seed        : random seed for reproducibility
+    Instead of the full gradient, we use a noisy estimate computed from
+    a random mini-batch. This is the workhorse of deep learning training --
+    the noise actually helps escape sharp local minima.
 
-    Returns
-    -------
-    result : OptimResult
+    Optionally pass a lr_schedule callable (see the schedule functions below)
+    to decay the learning rate over training.
+
+    Args:
+        landscape   : must have a .stochastic_grad(x, batch_size, rng) method
+        lr_schedule : callable(step) -> float, or None for constant lr
+        seed        : for reproducibility
+
+    Returns:
+        OptimResult with full trajectory
     """
     result = OptimResult("SGD")
-    x = np.array(x0, dtype=np.float64)
+    x = np.array(x0, dtype=float)
     rng = np.random.default_rng(seed)
 
     for k in range(n_iter):
-        lr_k = lr_schedule(k) if lr_schedule else lr
+        # use decayed lr if a schedule was provided
+        current_lr = lr_schedule(k) if lr_schedule is not None else lr
+
         g = landscape.stochastic_grad(x, batch_size=batch_size, rng=rng)
         g_norm = np.linalg.norm(g)
         result.record(x, landscape.f(x), g_norm)
+
         if g_norm < tol:
             break
-        x = x - lr_k * g
+
+        x = x - current_lr * g
 
     return result
 
 
-# ─── 3. MOMENTUM (HEAVY BALL) ────────────────────────────────────────────────
+# --------------------------------------------------------------------------- #
+#  3. Momentum (Heavy Ball)                                                     #
+# --------------------------------------------------------------------------- #
 
 def momentum(landscape, x0, lr=0.01, beta=0.9, n_iter=500, tol=1e-8):
     """
-    Gradient Descent with Heavy Ball (Polyak) Momentum.
+    Gradient descent with momentum (Polyak's Heavy Ball method).
 
-    v_{k+1} = beta * v_k - lr * grad f(x_k)
-    x_{k+1} = x_k + v_{k+1}
+    Instead of stepping purely in the gradient direction, we accumulate
+    a velocity vector that builds up in consistent directions and dampens
+    oscillations across ravine walls.
 
-    Parameters
-    ----------
-    beta : momentum coefficient (0.9 is typical)
+        v = beta * v - lr * grad(f(x))
+        x = x + v
 
-    Returns
-    -------
-    result : OptimResult
+    beta=0.9 means 90% of the old velocity is kept -- the ball keeps rolling.
+
+    Args:
+        beta : momentum coefficient, usually 0.9
+
+    Returns:
+        OptimResult with full trajectory
     """
     result = OptimResult("Momentum")
-    x = np.array(x0, dtype=np.float64)
-    v = np.zeros_like(x)
+    x = np.array(x0, dtype=float)
+    v = np.zeros_like(x)   # velocity starts at rest
 
     for _ in range(n_iter):
         g = landscape.grad(x)
         g_norm = np.linalg.norm(g)
         result.record(x, landscape.f(x), g_norm)
+
         if g_norm < tol:
             break
-        v = beta * v - lr * g
-        x = x + v
+
+        v = beta * v - lr * g   # update velocity
+        x = x + v               # move with it
 
     return result
 
 
-# ─── 4. NESTEROV ACCELERATED GRADIENT DESCENT ────────────────────────────────
+# --------------------------------------------------------------------------- #
+#  4. Nesterov Accelerated Gradient Descent                                     #
+# --------------------------------------------------------------------------- #
 
 def nesterov(landscape, x0, lr=0.01, beta=0.9, n_iter=500, tol=1e-8):
     """
-    Nesterov Accelerated Gradient Descent.
+    Nesterov accelerated gradient method.
 
-    y_{k+1} = x_k + beta * (x_k - x_{k-1})   [lookahead]
-    x_{k+1} = y_{k+1} - lr * grad f(y_{k+1})
+    The key insight over plain momentum: instead of evaluating the gradient
+    at the current position, peek ahead to where momentum would take us,
+    then evaluate the gradient there. This "look before you leap" trick
+    gives the optimal O(1/k^2) convergence rate on convex problems.
 
-    Achieves optimal O(1/k^2) convergence on strongly convex functions.
+        y      = x + beta * (x - x_prev)   <- look-ahead point
+        x_new  = y - lr * grad(f(y))       <- step from look-ahead
 
-    Returns
-    -------
-    result : OptimResult
+    Args:
+        beta : momentum coefficient
+
+    Returns:
+        OptimResult with full trajectory
     """
     result = OptimResult("Nesterov AGD")
-    x = np.array(x0, dtype=np.float64)
+    x = np.array(x0, dtype=float)
     x_prev = x.copy()
 
     for _ in range(n_iter):
         g = landscape.grad(x)
         g_norm = np.linalg.norm(g)
         result.record(x, landscape.f(x), g_norm)
+
         if g_norm < tol:
             break
-        # Lookahead step
+
+        # compute look-ahead point using extrapolation from previous step
         y = x + beta * (x - x_prev)
         g_y = landscape.grad(y)
+
         x_prev = x.copy()
         x = y - lr * g_y
 
     return result
 
 
-# ─── 5. ADAGRAD ───────────────────────────────────────────────────────────────
+# --------------------------------------------------------------------------- #
+#  5. AdaGrad                                                                   #
+# --------------------------------------------------------------------------- #
 
 def adagrad(landscape, x0, lr=0.1, eps=1e-8, n_iter=500, tol=1e-8):
     """
-    AdaGrad — Adaptive Gradient Algorithm.
+    AdaGrad -- Adaptive Gradient Algorithm.
 
-    G_k = G_{k-1} + grad f(x_k) ⊙ grad f(x_k)   [accumulated squared gradients]
-    x_{k+1} = x_k - (lr / sqrt(G_k + eps)) * grad f(x_k)
+    Scales the learning rate for each parameter individually based on the
+    history of gradients. Parameters with frequent large updates get a
+    smaller effective lr; rarely updated parameters keep a larger lr.
+    Great for sparse gradients, but the accumulated denominator grows
+    forever -- lr eventually shrinks to near zero.
 
-    Per-parameter adaptive learning rate; excels on sparse gradients.
+        G = G + grad^2                      <- cumulative squared gradients
+        x = x - (lr / sqrt(G + eps)) * grad
 
-    Returns
-    -------
-    result : OptimResult
+    Args:
+        eps : small constant to avoid division by zero
+
+    Returns:
+        OptimResult with full trajectory
     """
     result = OptimResult("AdaGrad")
-    x = np.array(x0, dtype=np.float64)
-    G = np.zeros_like(x)  # accumulated squared gradients
+    x = np.array(x0, dtype=float)
+    G = np.zeros_like(x)   # running sum of squared gradients
 
     for _ in range(n_iter):
         g = landscape.grad(x)
         g_norm = np.linalg.norm(g)
         result.record(x, landscape.f(x), g_norm)
+
         if g_norm < tol:
             break
-        G += g**2
+
+        G += g ** 2   # keep accumulating -- this eventually kills the lr
         x = x - (lr / (np.sqrt(G) + eps)) * g
 
     return result
 
 
-# ─── 6. RMSPROP ───────────────────────────────────────────────────────────────
+# --------------------------------------------------------------------------- #
+#  6. RMSProp                                                                   #
+# --------------------------------------------------------------------------- #
 
 def rmsprop(landscape, x0, lr=0.01, rho=0.9, eps=1e-8, n_iter=500, tol=1e-8):
     """
-    RMSProp — Root Mean Square Propagation.
+    RMSProp -- Root Mean Square Propagation (Hinton, 2012).
 
-    v_k = rho * v_{k-1} + (1 - rho) * grad f(x_k)^2   [EMA of squared grads]
-    x_{k+1} = x_k - (lr / sqrt(v_k + eps)) * grad f(x_k)
+    Fix for AdaGrad's vanishing lr: use an exponential moving average of
+    squared gradients instead of summing them all. Old gradients gradually
+    expire so the effective lr stays reasonable throughout training.
 
-    Prevents AdaGrad's monotonically decreasing learning rates.
+        v = rho * v + (1 - rho) * grad^2   <- EMA of squared gradients
+        x = x - (lr / sqrt(v + eps)) * grad
 
-    Parameters
-    ----------
-    rho : decay rate for EMA (0.9 is typical)
+    Args:
+        rho : EMA decay rate (0.9 standard -- forgets ~10% per step)
 
-    Returns
-    -------
-    result : OptimResult
+    Returns:
+        OptimResult with full trajectory
     """
     result = OptimResult("RMSProp")
-    x = np.array(x0, dtype=np.float64)
-    v = np.zeros_like(x)  # EMA of squared gradients
+    x = np.array(x0, dtype=float)
+    v = np.zeros_like(x)
 
     for _ in range(n_iter):
         g = landscape.grad(x)
         g_norm = np.linalg.norm(g)
         result.record(x, landscape.f(x), g_norm)
+
         if g_norm < tol:
             break
-        v = rho * v + (1 - rho) * g**2
+
+        v = rho * v + (1 - rho) * g ** 2
         x = x - (lr / (np.sqrt(v) + eps)) * g
 
     return result
 
 
-# ─── 7. ADAM ──────────────────────────────────────────────────────────────────
+# --------------------------------------------------------------------------- #
+#  7. Adam                                                                      #
+# --------------------------------------------------------------------------- #
 
 def adam(landscape, x0, lr=0.001, beta1=0.9, beta2=0.999,
          eps=1e-8, n_iter=500, tol=1e-8):
     """
-    Adam — Adaptive Moment Estimation.
+    Adam -- Adaptive Moment Estimation (Kingma & Ba, 2015).
 
-    m_k = beta1 * m_{k-1} + (1 - beta1) * grad       [1st moment / momentum]
-    v_k = beta2 * v_{k-1} + (1 - beta2) * grad^2     [2nd moment / RMSProp]
-    m̂_k = m_k / (1 - beta1^k)                         [bias correction]
-    v̂_k = v_k / (1 - beta2^k)                         [bias correction]
-    x_{k+1} = x_k - lr * m̂_k / (sqrt(v̂_k) + eps)
+    Combines momentum (1st moment) with RMSProp (2nd moment), plus bias
+    correction to handle the cold-start problem in the first few steps.
 
-    Parameters
-    ----------
-    beta1 : 1st moment decay (0.9 default)
-    beta2 : 2nd moment decay (0.999 default)
+        m = beta1 * m + (1 - beta1) * grad       <- 1st moment (mean)
+        v = beta2 * v + (1 - beta2) * grad^2     <- 2nd moment (uncentered var)
+        m_hat = m / (1 - beta1^k)                <- bias-corrected
+        v_hat = v / (1 - beta2^k)
+        x = x - lr * m_hat / (sqrt(v_hat) + eps)
 
-    Returns
-    -------
-    result : OptimResult
+    Adam is the default choice for most DL projects. Fast convergence,
+    relatively tolerant of lr choice. Can overfit vs SGD on some problems.
+
+    Args:
+        beta1 : 1st moment decay, controls momentum (default 0.9)
+        beta2 : 2nd moment decay, controls adaptive scaling (default 0.999)
+        eps   : numerical stability
+
+    Returns:
+        OptimResult with full trajectory
     """
     result = OptimResult("Adam")
-    x = np.array(x0, dtype=np.float64)
-    m = np.zeros_like(x)  # 1st moment
-    v = np.zeros_like(x)  # 2nd moment
+    x = np.array(x0, dtype=float)
+    m = np.zeros_like(x)   # 1st moment
+    v = np.zeros_like(x)   # 2nd moment
 
     for k in range(1, n_iter + 1):
         g = landscape.grad(x)
         g_norm = np.linalg.norm(g)
         result.record(x, landscape.f(x), g_norm)
+
         if g_norm < tol:
             break
+
         m = beta1 * m + (1 - beta1) * g
-        v = beta2 * v + (1 - beta2) * g**2
-        m_hat = m / (1 - beta1**k)
-        v_hat = v / (1 - beta2**k)
+        v = beta2 * v + (1 - beta2) * g ** 2
+
+        # bias correction matters most in the first ~10 steps
+        m_hat = m / (1 - beta1 ** k)
+        v_hat = v / (1 - beta2 ** k)
+
         x = x - lr * m_hat / (np.sqrt(v_hat) + eps)
 
     return result
 
 
-# ─── LEARNING RATE SCHEDULES ──────────────────────────────────────────────────
+# --------------------------------------------------------------------------- #
+#  Learning rate schedules                                                      #
+# --------------------------------------------------------------------------- #
 
 def cosine_schedule(lr_init, n_iter, lr_min=1e-6):
-    """Returns a callable: step -> lr using cosine annealing."""
+    """
+    Cosine annealing: smoothly decays lr from lr_init down to lr_min.
+    Usually better than step decay in practice -- no sudden jumps.
+
+    Usage:
+        schedule = cosine_schedule(0.01, n_iter=500)
+        sgd(landscape, x0, lr_schedule=schedule, ...)
+    """
     def schedule(k):
-        return lr_min + 0.5 * (lr_init - lr_min) * (
-            1 + np.cos(np.pi * k / n_iter))
+        progress = k / n_iter
+        return lr_min + 0.5 * (lr_init - lr_min) * (1 + np.cos(np.pi * progress))
     return schedule
 
 
 def step_decay_schedule(lr_init, drop=0.5, every=100):
-    """Returns a callable: step -> lr using step decay."""
+    """
+    Step decay: multiply lr by `drop` every `every` steps.
+    Simple and interpretable but causes abrupt lr changes.
+
+    Usage:
+        schedule = step_decay_schedule(0.1, drop=0.5, every=100)
+    """
     def schedule(k):
         return lr_init * (drop ** (k // every))
     return schedule
 
 
 def warmup_cosine_schedule(lr_init, warmup_steps, n_iter):
-    """Linear warmup followed by cosine decay."""
+    """
+    Linear warmup then cosine decay.
+    Helpful when training is unstable at the start -- ramp up lr slowly,
+    then anneal. Common in transformer training.
+
+    Usage:
+        schedule = warmup_cosine_schedule(0.01, warmup_steps=50, n_iter=500)
+    """
     def schedule(k):
         if k < warmup_steps:
             return lr_init * k / max(1, warmup_steps)
@@ -308,17 +402,31 @@ def warmup_cosine_schedule(lr_init, warmup_steps, n_iter):
     return schedule
 
 
-# ─── CONVENIENCE: RUN ALL ─────────────────────────────────────────────────────
+# --------------------------------------------------------------------------- #
+#  Convenience: run all optimizers at once for comparison                       #
+# --------------------------------------------------------------------------- #
 
-def run_all_optimizers(landscape, x0, n_iter=500,
-                       gd_lr=0.01, sgd_lr=0.05, mom_lr=0.01,
-                       nag_lr=0.01, ada_lr=0.1, rms_lr=0.01, adam_lr=0.001):
-    """Run all 7 optimizers and return a dict of OptimResult objects."""
-    results = {}
-    results['GD']       = gradient_descent(landscape, x0, lr=gd_lr,  n_iter=n_iter)
-    results['Momentum'] = momentum(landscape,         x0, lr=mom_lr, n_iter=n_iter)
-    results['Nesterov'] = nesterov(landscape,         x0, lr=nag_lr, n_iter=n_iter)
-    results['AdaGrad']  = adagrad(landscape,          x0, lr=ada_lr, n_iter=n_iter)
-    results['RMSProp']  = rmsprop(landscape,          x0, lr=rms_lr, n_iter=n_iter)
-    results['Adam']     = adam(landscape,             x0, lr=adam_lr, n_iter=n_iter)
-    return results
+def run_all(landscape, x0, n_iter=500,
+            gd_lr=0.01, mom_lr=0.01, nag_lr=0.01,
+            ada_lr=0.1, rms_lr=0.01, adam_lr=0.001):
+    """
+    Run all 6 deterministic optimizers on the same problem.
+    Returns a dict {name: OptimResult} ready for plotting.
+
+    Quick example:
+        from landscapes import make_ill_conditioned_quadratic
+        land = make_ill_conditioned_quadratic()
+        results = run_all(land, x0=np.zeros(10))
+        for name, r in results.items():
+            plt.semilogy(r.f_history, label=name)
+        plt.legend(); plt.xlabel("Iteration"); plt.ylabel("Loss")
+        plt.show()
+    """
+    return {
+        "GD":       gradient_descent(landscape, x0, lr=gd_lr,   n_iter=n_iter),
+        "Momentum": momentum(landscape,         x0, lr=mom_lr,  n_iter=n_iter),
+        "Nesterov": nesterov(landscape,         x0, lr=nag_lr,  n_iter=n_iter),
+        "AdaGrad":  adagrad(landscape,          x0, lr=ada_lr,  n_iter=n_iter),
+        "RMSProp":  rmsprop(landscape,          x0, lr=rms_lr,  n_iter=n_iter),
+        "Adam":     adam(landscape,             x0, lr=adam_lr, n_iter=n_iter),
+    }
